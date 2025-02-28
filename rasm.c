@@ -13,7 +13,11 @@ int main() {
     Rm rm = {0};
 
     Inst program[] = {
-	MAKE_INST_PUSH(10),
+	MAKE_INST_PUSH(0),
+	MAKE_INST_DUP(0),
+	MAKE_INST_PUSH(1),
+	MAKE_INST_PLUSI,
+	MAKE_INST_JMP(2),
 	MAKE_INST_HALT,	
     };
 
@@ -24,7 +28,8 @@ int main() {
     load_program_from_memory(&rm, program, ARRAY_SIZE(program));
 
     // * Execute the program
-    rm_execute_program(&rm);
+    int limit = 10;
+    rm_execute_program(&rm, limit);
 
     // * Dump the stack
     rm_dump_stack(stdout, &rm);
