@@ -14,7 +14,6 @@ int main() {
 
     Inst program[] = {
 	MAKE_INST_PUSH(10),
-	MAKE_INST_DUP(0),
 	MAKE_INST_HALT,	
     };
 

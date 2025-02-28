@@ -120,7 +120,7 @@ Err rm_execute_program(Rm *rm) {
 	    }
 	    rm->stack[rm->rm_stack_size++] = (int64_t)inst.inst_operand;
 	    rm->ip += 1;
-	} break;
+	} break;	
 
 	case INST_DUP: {
 	    if(rm->rm_stack_size >= RM_STACK_CAPACITY) {
