@@ -14,12 +14,11 @@ int main() {
 
     Inst program[] = {
 	MAKE_INST_PUSH(10),
-	MAKE_INST_PUSH(20),
-	MAKE_INST_HALT,
-	// MAKE_INST_PLUSI,
+	MAKE_INST_DUP(0),
+	MAKE_INST_HALT,	
     };
 
-    // printf("Program Size: %ld\n", sizeof(program[0]) * ARRAY_SIZE(program));
+    printf("Program Size: %ld\n", sizeof(program[0]) * ARRAY_SIZE(program));
  
 
     // * Load the program from memory
