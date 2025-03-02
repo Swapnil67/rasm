@@ -4,6 +4,7 @@
 #include<stdio.h>
 #include<assert.h>
 #include<stdbool.h>
+#include<stdlib.h>
 #include<string.h>
 #include<stdint.h>
 #include<inttypes.h>
@@ -33,6 +34,8 @@ typedef struct {
     uint64_t   inst_operand;
 } Inst;
 
+const char* inst_to_cstr(Inst_Type type);
+
 // * vm error's
 typedef enum {
     ERR_STACK_UNDERFLOW = 0,
@@ -40,8 +43,7 @@ typedef enum {
     ERR_ILLEGAL_INST,
     ERR_OK,
 } Err;
-
-const char* inst_to_cstr(Inst_Type type);
+const char* err_as_cstr(Err err);
 
 #define MAKE_INST_NOP		{ .inst_type = INST_NOP }
 #define MAKE_INST_HALT		{ .inst_type = INST_HALT }
@@ -53,7 +55,6 @@ const char* inst_to_cstr(Inst_Type type);
 #define MAKE_INST_MINUSI	{ .inst_type = INST_MINUSI }
 #define MAKE_INST_DIVI		{ .inst_type = INST_DIVI }
 #define MAKE_INST_MODI		{ .inst_type = INST_MODI }
-
 
 typedef struct {
     int64_t stack[RM_STACK_CAPACITY];    
@@ -92,6 +93,17 @@ default:
     }
 }
 
+const char* err_as_cstr(Err err) {
+    switch(err) {
+    case ERR_OK: return "ERR_OK";
+    case ERR_ILLEGAL_INST: return "ERR_ILLEGAL_INST";
+    case ERR_STACK_OVERFLOW: return "ERR_STACK_OVERFLOW";
+    case ERR_STACK_UNDERFLOW: return "ERR_STACK_UNDERFLOW";
+    default:
+	return "Unknown Err";
+    }
+}
+
 void rm_dump_stack(FILE *stream, Rm *rm) {
     fprintf(stream, "Stack:\n");
     if(rm->rm_stack_size > 0) {
@@ -107,6 +119,7 @@ Err rm_execute_program(Rm *rm, int limit) {
     while(limit != 0 && !rm->halt) {
 	Err err = rm_execute_inst(rm);
 	if(err != ERR_OK) {
+	    printf("ERROR: %s\n", err_as_cstr(err));
 	    return err;
 	}
 	if(limit > 0) {
