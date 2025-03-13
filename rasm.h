@@ -8,11 +8,16 @@
 #include<string.h>
 #include<stdint.h>
 #include<inttypes.h>
+#include<errno.h>
 
 #define RM_STACK_CAPACITY 1024
 #define RM_PROGRAM_CAPACITY 1024
+#define RM_ARENA_CAPACITY  (10 * 1000 * 1000)
 
 #define ARRAY_SIZE(arr) sizeof(arr)/sizeof(arr[0])
+
+#define SV_Fmt "%.*s"
+#define SV_Arg(sv) (sv.count, sv.data)
 
 typedef enum {
     INST_NOP,
@@ -64,9 +69,14 @@ typedef struct {
     uint64_t rm_program_size;
     uint64_t ip;
 
+    char arena[RM_ARENA_CAPACITY];
+    size_t arena_size;
+
     bool halt;
 } Rm;
 
+void *arena_alloc(Rm *rm, size_t n);
+String_View rm_load_program_from_file(Rm *rm, String_View filepath);
 void rm_dump_stack(FILE *stream, Rm *rm);
 Err rm_execute_program(Rm *rm, int limit);
 Err rm_execute_inst(Rm *rm);
@@ -101,6 +111,68 @@ const char* err_as_cstr(Err err) {
     case ERR_STACK_UNDERFLOW: return "ERR_STACK_UNDERFLOW";
     default:
 	return "Unknown Err";
+    }
+}
+
+
+void *arena_alloc(Rm *rm, size_t n) {
+    assert(rm->arena_size + n < RM_ARENA_CAPACITY);
+    void *result = rm->arena + rm->arena_size;
+    rm->arena_size += n;
+    return result;
+}
+
+String_View rm_load_program_from_file(Rm *rm, String_View filepath) {
+    (void) rm;
+    FILE *file_fd = fopen(filepath.data, "rb");
+    if(file_fd == NULL) {
+	fprintf(stderr, "ERROR: Could Not read File %s\n", strerror(errno));
+	exit(1);
+    }
+
+    if(fseek(file_fd, 0, SEEK_END) < 0) {
+	fprintf(stderr, "ERROR: Could Not read File %s\n", strerror(errno));
+	exit(1);
+    }
+
+    long m = ftell(file_fd);
+    if(m < 0) {
+	fprintf(stderr, "ERROR: Could Not read File %s\n", strerror(errno));
+	exit(1);
+    }
+
+    // * Allocate buffer of m size
+    void *buffer = arena_alloc(rm, (size_t)m);
+    if(buffer == NULL) {
+	fprintf(stderr, "ERROR: Could Not allocate memory for the file %s\n", strerror(errno));
+	exit(1);
+    }
+
+    // * Set file pos at the start of file
+    if(fseek(file_fd, 0, SEEK_SET) < 0) {
+	fprintf(stderr, "ERROR: Could Not read File %s\n", strerror(errno));
+	exit(1);
+    }
+
+    // Copy from 0 - m into buffer
+    size_t n = fread(buffer, 1, (size_t)m, file_fd);
+    if(ferror(file_fd)) {
+	fprintf(stderr, "ERROR: Could Not read File %s\n", strerror(errno));
+	exit(1);
+    }
+    
+    fclose(file_fd);
+
+    return (String_View) { .count = n, .data = buffer }; 
+}
+
+// * Translate RM program from Text To Binary (create .rm bytecode executables)
+Err rasm_translate_source(Rm *rm, String_View original_source) {
+    int line_number = 0;
+
+    while(original_source.count > 0) {
+	String_View line = sv_chop_by_delim(&original_source, '\n');
+	printf("Line: "SV_Fmt"", SV_Arg(line));
     }
 }
 
