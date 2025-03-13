@@ -17,7 +17,7 @@
 #define ARRAY_SIZE(arr) sizeof(arr)/sizeof(arr[0])
 
 #define SV_Fmt "%.*s"
-#define SV_Arg(sv) (sv.count, sv.data)
+#define SV_Arg(sv) (int)sv.count, sv.data
 
 typedef enum {
     INST_NOP,
@@ -173,6 +173,9 @@ Err rasm_translate_source(Rm *rm, String_View original_source) {
     while(original_source.count > 0) {
 	String_View line = sv_chop_by_delim(&original_source, '\n');
 	printf("Line: "SV_Fmt"", SV_Arg(line));
+	
+	line_number += 1;
+	// TODO Check if comment
     }
 }
 
