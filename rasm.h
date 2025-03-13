@@ -19,6 +19,9 @@
 #define SV_Fmt "%.*s"
 #define SV_Arg(sv) (int)sv.count, sv.data
 
+#define RASM_COMMENT_SYMBOL ';'
+#define RASM_PP_SYMBOL '%'
+
 typedef enum {
     INST_NOP,
     INST_HALT,
@@ -75,6 +78,7 @@ typedef struct {
     bool halt;
 } Rm;
 
+void *arena_sv_to_cstr(Rm *rm, String_View sv);
 void *arena_alloc(Rm *rm, size_t n);
 String_View rm_load_program_from_file(Rm *rm, String_View filepath);
 void rm_dump_stack(FILE *stream, Rm *rm);
@@ -84,6 +88,18 @@ Err rm_execute_inst(Rm *rm);
 #endif // RM_H_
 
 #ifdef RM_IMPLEMENTATION
+
+
+const char* err_as_cstr(Err err) {
+    switch(err) {
+    case ERR_OK: return "ERR_OK";
+    case ERR_ILLEGAL_INST: return "ERR_ILLEGAL_INST";
+    case ERR_STACK_OVERFLOW: return "ERR_STACK_OVERFLOW";
+    case ERR_STACK_UNDERFLOW: return "ERR_STACK_UNDERFLOW";
+    default:
+	return "Unknown Err";
+    }
+}
 
 const char* inst_to_cstr(Inst_Type type) {
     switch(type) {
@@ -103,17 +119,51 @@ default:
     }
 }
 
-const char* err_as_cstr(Err err) {
-    switch(err) {
-    case ERR_OK: return "ERR_OK";
-    case ERR_ILLEGAL_INST: return "ERR_ILLEGAL_INST";
-    case ERR_STACK_OVERFLOW: return "ERR_STACK_OVERFLOW";
-    case ERR_STACK_UNDERFLOW: return "ERR_STACK_UNDERFLOW";
-    default:
-	return "Unknown Err";
+const char* inst_as_cstr(Inst_Type type) {
+    switch(type) {
+    case INST_NOP: return "nop";
+    case INST_HALT: return "halt";
+    case INST_PUSH: return "push";
+    case INST_DUP: return "dup";
+    case INST_JMP: return "jmp";
+    
+    case INST_PLUSI: return "plusi";
+    case INST_MINUSI: return "minusi";
+    case INST_MULI: return "muli";
+    case INST_DIVI: return "divi";
+    case INST_MODI: return "modi";
+default:
+    return "Unknown type";
     }
 }
 
+bool inst_has_operand(Inst_Type type) {
+    switch(type) {
+    case INST_NOP: return false;
+    case INST_HALT: return false;
+    case INST_PUSH: return true;
+    case INST_DUP: return true;
+    case INST_JMP: return true;
+    
+    case INST_PLUSI: return false;
+    case INST_MINUSI: return false;
+    case INST_MULI: return false;
+    case INST_DIVI: return false;
+    case INST_MODI: return false;
+default:
+    fprintf(stderr, "ERROR: unknown Inst_Type\n");
+    exit(1);
+    }
+}
+
+void *arena_sv_to_cstr(Rm *rm, String_View sv) {
+    assert(rm->arena_size + (sv.count + 1) < RM_ARENA_CAPACITY);
+    void *result = rm->arena + rm->arena_size; 
+    memcpy(result, sv.data, sv.count);
+    rm->arena_size += (sv.count + 1);
+    //result[sv.count] = '\0';
+    return result;
+}
 
 void *arena_alloc(Rm *rm, size_t n) {
     assert(rm->arena_size + n < RM_ARENA_CAPACITY);
@@ -124,7 +174,9 @@ void *arena_alloc(Rm *rm, size_t n) {
 
 String_View rm_load_program_from_file(Rm *rm, String_View filepath) {
     (void) rm;
-    FILE *file_fd = fopen(filepath.data, "rb");
+    const char *filepath_cstr = arena_sv_to_cstr(rm, filepath);
+
+    FILE *file_fd = fopen(filepath_cstr, "rb");
     if(file_fd == NULL) {
 	fprintf(stderr, "ERROR: Could Not read File %s\n", strerror(errno));
 	exit(1);
@@ -167,15 +219,53 @@ String_View rm_load_program_from_file(Rm *rm, String_View filepath) {
 }
 
 // * Translate RM program from Text To Binary (create .rm bytecode executables)
-Err rasm_translate_source(Rm *rm, String_View original_source) {
+void rasm_translate_source(Rm *rm, String_View original_source) {
     int line_number = 0;
 
     while(original_source.count > 0) {
 	String_View line = sv_chop_by_delim(&original_source, '\n');
-	printf("Line: "SV_Fmt"", SV_Arg(line));
+	printf("Line: "SV_Fmt"\n", SV_Arg(line));
 	
 	line_number += 1;
-	// TODO Check if comment
+	// Check if comment
+	if(*line.data == RASM_COMMENT_SYMBOL) {
+	    continue;
+	}
+
+	String_View token = sv_chop_by_delim(&line, ' ');
+	// printf("Token: "SV_Fmt"\n", SV_Arg(token));
+	
+	if(token.count > 0 && *token.data == RASM_PP_SYMBOL) {
+	    // TODO Check for pre-processors
+	}
+
+	// TODO Check for labels
+
+	// Instructions
+	if(token.count > 0) {
+	    // * Get the operand
+	    String_View operand = sv_trim(sv_chop_by_delim(&line, RASM_COMMENT_SYMBOL));
+	    if(sv_eq(token, SV(inst_as_cstr(INST_PUSH)))) {
+		Inst_Type inst_type = INST_PUSH;
+		rm->program[rm->rm_program_size].inst_type = INST_PUSH;
+		
+		if(inst_has_operand(inst_type)) {
+		    char *str = arena_sv_to_cstr(rm, operand);
+		    char *endptr;
+		    int64_t val = strtoll(str, &endptr, 10);
+		    if(endptr == str) {
+			fprintf(stderr, "No digits were found\n");
+			exit(1);
+		    }
+		    rm->program[rm->rm_program_size].inst_operand = (uint64_t) val;
+		    rm->rm_program_size += 1;
+		}
+	    }
+	    else if(sv_eq(token, SV(inst_as_cstr(INST_HALT)))) {
+		rm->program[rm->rm_program_size].inst_type = INST_HALT;
+		rm->rm_program_size += 1;
+	    }	    
+	}
     }
 }
 

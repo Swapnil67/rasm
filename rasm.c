@@ -71,36 +71,33 @@ int main(int argc, char *argv[]) {
     // * Load the program from file
     String_View original_source = rm_load_program_from_file(&rm, input_filepath);
 
-    Err err = rasm_translate_source(&rm, original_source);
-    
-    
-    return 0;
-    
-    // if(!debug) {
-    // 	// * execute the program
-    // 	rm_execute_program(&rm, limit);
+    rasm_translate_source(&rm, original_source);
+        
+    if(!debug) {
+	// * execute the program
+	rm_execute_program(&rm, limit);
 
-    // 	// * dump the stack
-    // 	rm_dump_stack(stdout, &rm);
-    // }
-    // else {
-    // 	while(limit != 0 && !rm.halt) {
-    // 	    // * execute the instruction
-    // 	    err err = rm_execute_inst(&rm);
-    // 	    if(err != err_ok) {
-    // 		fprintf(stderr, err_as_cstr(err));
-    // 		return err;
-    // 	    }
+	// * dump the stack
+	rm_dump_stack(stdout, &rm);
+    }
+    else {
+	while(limit != 0 && !rm.halt) {
+	    // * execute the instruction
+	    Err err = rm_execute_inst(&rm);
+	    if(err != ERR_OK) {
+		fprintf(stderr, err_as_cstr(err));
+		return err;
+	    }
 	    
-    // 	    if(limit > 0) {
-    // 		--limit;
-    // 	    }
+	    if(limit > 0) {
+		--limit;
+	    }
 	    
-    // 	    // * dump the stack
-    // 	    rm_dump_stack(stdout, &rm);
-    // 	    getchar();	    
-    // 	}
-    // }
+	    // * dump the stack
+	    rm_dump_stack(stdout, &rm);
+	    getchar();	    
+	}
+    }
 
     return 0;
 }
