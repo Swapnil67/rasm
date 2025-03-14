@@ -1,14 +1,22 @@
 #ifndef RM_H_
 #define RM_H_
 
-#include<stdio.h>
-#include<assert.h>
-#include<stdbool.h>
-#include<stdlib.h>
-#include<string.h>
-#include<stdint.h>
-#include<inttypes.h>
-#include<errno.h>
+#include <stdio.h>
+#include <assert.h>
+#include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include <inttypes.h>
+#include <errno.h>
+
+#if defined(__GNUC__) || defined(__clang__)
+#define PACK( __Declaration__ ) __Declaration__ __attribute__((__packed__))
+#elif defined(_MSC_VER)
+#define PACK( __Declaration__ ) __pragma( pack(push, 1) ) __Declaration__ __pragma( pack(pop))
+#else
+#  error "Packed attributes for struct is not implemented for this compiler. This may result in a program working incorrectly. Feel free to fix that and submit a Pull Request to https://github.com/tsoding/bng"
+#endif
 
 #define RM_STACK_CAPACITY 1024
 #define RM_PROGRAM_CAPACITY 1024
@@ -82,12 +90,23 @@ typedef struct {
 
 void *arena_sv_to_cstr(Rm *rm, String_View sv);
 void *arena_alloc(Rm *rm, size_t n);
-String_View rm_load_program_from_file(Rm *rm, String_View filepath);
+String_View arena_slurp_file(Rm *rm, String_View filepath);
 void rasm_translate_source(Rm *rm, String_View original_source);
+void rasm_save_to_file(Rm *rm, String_View filepath);
 
 void rm_dump_stack(FILE *stream, Rm *rm);
+void rm_load_program_from_file(Rm *rm, const char* filepath);
 Err rm_execute_program(Rm *rm, int limit);
 Err rm_execute_inst(Rm *rm);
+
+#define RM_FILE_MAGIC 0x4D42
+
+PACK(struct Rm_File_Meta {
+    uint16_t magic;
+    uint64_t program_size;
+});
+
+typedef struct Rm_File_Meta Rm_File_Meta;
 
 #endif // RM_H_
 
@@ -176,11 +195,10 @@ void *arena_alloc(Rm *rm, size_t n) {
     return result;
 }
 
-String_View rm_load_program_from_file(Rm *rm, String_View filepath) {
-    (void) rm;
+String_View arena_slurp_file(Rm *rm, String_View filepath) {
     const char *filepath_cstr = arena_sv_to_cstr(rm, filepath);
 
-    FILE *file_fd = fopen(filepath_cstr, "rb");
+    FILE *file_fd = fopen(filepath_cstr, "r");
     if(file_fd == NULL) {
 	fprintf(stderr, "ERROR: Could Not read File %s\n", strerror(errno));
 	exit(1);
@@ -223,12 +241,15 @@ String_View rm_load_program_from_file(Rm *rm, String_View filepath) {
 }
 
 // * Translate RM program from Text To Binary (create .rm bytecode executables)
-void rasm_translate_source(Rm *rm, String_View original_source) {
+void rasm_translate_source(Rm *rm, String_View input_filepath) {
+    // * Load the program from file
+    String_View original_source = arena_slurp_file(rm, input_filepath);
+
     int line_number = 0;
 
     while(original_source.count > 0) {
 	String_View line = sv_chop_by_delim(&original_source, '\n');
-	printf("Line: "SV_Fmt"\n", SV_Arg(line));
+	// printf("Line: "SV_Fmt"\n", SV_Arg(line));
 	
 	line_number += 1;
 	// Check if comment
@@ -282,6 +303,41 @@ void rm_dump_stack(FILE *stream, Rm *rm) {
     } else {	
 	fprintf(stream, "[empty]\n");
     }   
+}
+
+// * Load the program from rm bytecode into rm->program
+void rm_load_program_from_file(Rm *rm, const char* filepath) {
+    FILE *f = fopen(filepath, "rb");
+    if(f == NULL) {
+	fprintf(stderr, "ERROR: could not open file `%s`: %s\n", filepath, strerror(errno));
+	exit(1);
+    }
+
+    // * Read the meta Information about file
+    Rm_File_Meta meta = {0};
+    size_t n = fread(&meta, sizeof(meta), 1, f);
+    if(n < 1) {
+	fprintf(stderr, "ERROR: could not read file meta `%s`: %s\n", filepath, strerror(errno));
+	exit(1);	
+    }
+
+    if(meta.magic != RM_FILE_MAGIC) {
+	fprintf(stderr,
+	"ERROR: %s does not appear to be valid BM file"
+	"Unexpected magic %04X. Expected %04X\n",
+	filepath, meta.magic, RM_FILE_MAGIC);
+	exit(1);	
+    }
+
+    // printf("program size: %ld\n", meta.program_size);
+    rm->rm_program_size = fread(rm->program, sizeof(rm->program[0]), meta.program_size, f);
+    if(meta.program_size != rm->rm_program_size) {
+	fprintf(stderr,
+	        "ERROR: %s read %"PRIu64" instructions, Expected %"PRIu64" instructions",
+	        filepath, rm->rm_program_size, meta.program_size);
+	exit(1);
+    }
+    
 }
 
 Err rm_execute_program(Rm *rm, int limit) {
@@ -404,6 +460,35 @@ Err rm_execute_inst(Rm *rm) {
     return ERR_OK;
 }
 
+// * Creates a bytecode executables
+void rasm_save_to_file(Rm *rm, String_View filepath) {
+    const char *filepath_cstr = arena_sv_to_cstr(rm, filepath);
 
+    FILE *file_fd = fopen(filepath_cstr, "wb");
+    if(file_fd == NULL) {
+	fprintf(stderr, "ERROR: Could Not write to File %s\n", strerror(errno));
+	exit(1);
+    }
+
+    // * save program metadata
+    Rm_File_Meta meta = {
+	.magic = RM_FILE_MAGIC,
+	.program_size = rm->rm_program_size
+    };
+    fwrite(&meta, sizeof(meta), 1, file_fd);
+    if(ferror(file_fd)) {
+	fprintf(stderr, "ERROR: Could Not write to File %s\n", strerror(errno));
+	exit(1);	
+    }
+    
+    // * Write the program to file
+    fwrite(rm->program, sizeof(rm->program[0]), rm->rm_program_size, file_fd);
+    if(ferror(file_fd)) {
+	fprintf(stderr, "ERROR: Could Not write to File %s\n", strerror(errno));
+	exit(1);
+    }
+    
+    fclose(file_fd);
+}
 
 #endif // RM_IMPLEMENTATION

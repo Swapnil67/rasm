@@ -19,7 +19,7 @@ static char *shift(int *argc, char ***argv) {
 }
 
 static void usage(void) {
-    fprintf(stdout, "Usage: ./rasm -p [file.rasm]\n");
+    fprintf(stdout, "Usage: ./rasm [file.rasm] [file.rm]\n");
 }
 
 int main(int argc, char *argv[]) {
@@ -28,76 +28,38 @@ int main(int argc, char *argv[]) {
 
     shift(&argc, &argv);
 
+    // * Get the input .rasm file
     String_View input_filepath;
-
-    int debug = 0, limit = 69;
-    while(argc > 0) {
-	char *arg = shift(&argc, &argv);
-	if(strcmp(arg, "-d") == 0) {
-	    debug = 1;
-	}
-	else if(strcmp(arg, "-l") == 0) {
-	    char *endptr, *str = shift(&argc, &argv);
-	    limit = (int) strtol(str, &endptr, 10);
-	    if(endptr == str) {
-		fprintf(stderr, "Invalid limit.\n");
-		exit(EXIT_FAILURE);
-	    }
-	}
-	else if(strcmp(arg, "-p") == 0) {
-	    const char *str = shift(&argc, &argv);
-	    if(str == NULL) {		
-		fprintf(stderr, "Please provide a rasm file\n");
-		usage();
-		exit(1);
-	    }
-	    input_filepath = SV(str);
-	}
+    if(argc > 0) {
+	const char *input_file_str = shift(&argc, &argv);
+	input_filepath = SV(input_file_str);
     }
 
-    // Inst program[] = {
-    // 	MAKE_INST_PUSH(0),
-    // 	MAKE_INST_DUP(0),
-    // 	MAKE_INST_PUSH(1),
-    // 	MAKE_INST_PLUSI,
-    // 	MAKE_INST_DUP(0),
-    // 	MAKE_INST_JMP(2),
-    // 	MAKE_INST_HALT,	
-    // };
-
-    // * Load the program from memory
-    // load_program_from_memory(&rm, program, ARRAY_SIZE(program));
-
-    // * Load the program from file
-    String_View original_source = rm_load_program_from_file(&rm, input_filepath);
-
-    rasm_translate_source(&rm, original_source);
-        
-    if(!debug) {
-	// * execute the program
-	rm_execute_program(&rm, limit);
-
-	// * dump the stack
-	rm_dump_stack(stdout, &rm);
-    }
-    else {
-	while(limit != 0 && !rm.halt) {
-	    // * execute the instruction
-	    Err err = rm_execute_inst(&rm);
-	    if(err != ERR_OK) {
-		fprintf(stderr, err_as_cstr(err));
-		return err;
-	    }
-	    
-	    if(limit > 0) {
-		--limit;
-	    }
-	    
-	    // * dump the stack
-	    rm_dump_stack(stdout, &rm);
-	    getchar();	    
-	}
+    if(input_filepath.count == 0) {		
+	fprintf(stderr, "Please provide a input rasm file\n");
+	usage();
+	exit(1);
     }
 
+    // Get the output .rm file
+    String_View output_filepath;
+    if(argc > 0) {
+	const char *output_file_str = shift(&argc, &argv);
+	output_filepath = SV(output_file_str);
+    }
+    if(output_filepath.count == 0) {		
+	fprintf(stderr, "Please provide a output file\n");
+	usage();
+	exit(1);
+    }
+    
+    // * Converts rasm -> rm bytecode
+    rasm_translate_source(&rm, input_filepath);
+
+    // * saves rm bytecode to .rm file
+    rasm_save_to_file(&rm, output_filepath);
+
+    printf("Bytes of memory used: %ld\n", rm.arena_size);
+    
     return 0;
 }
