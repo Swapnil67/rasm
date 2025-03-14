@@ -42,7 +42,9 @@ typedef struct {
     uint64_t   inst_operand;
 } Inst;
 
+const char* inst_as_cstr(Inst_Type type);
 const char* inst_to_cstr(Inst_Type type);
+bool inst_has_operand(Inst_Type type);
 
 // * vm error's
 typedef enum {
@@ -81,6 +83,8 @@ typedef struct {
 void *arena_sv_to_cstr(Rm *rm, String_View sv);
 void *arena_alloc(Rm *rm, size_t n);
 String_View rm_load_program_from_file(Rm *rm, String_View filepath);
+void rasm_translate_source(Rm *rm, String_View original_source);
+
 void rm_dump_stack(FILE *stream, Rm *rm);
 Err rm_execute_program(Rm *rm, int limit);
 Err rm_execute_inst(Rm *rm);
