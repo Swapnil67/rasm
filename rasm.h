@@ -63,17 +63,6 @@ typedef enum {
 } Err;
 const char* err_as_cstr(Err err);
 
-#define MAKE_INST_NOP		{ .inst_type = INST_NOP }
-#define MAKE_INST_HALT		{ .inst_type = INST_HALT }
-#define MAKE_INST_PUSH(value)	{ .inst_type = INST_PUSH, .inst_operand = value }
-#define MAKE_INST_DUP(value)	{ .inst_type = INST_DUP, .inst_operand = value }
-#define MAKE_INST_JMP(value)	{ .inst_type = INST_JMP, .inst_operand = value }
-
-#define MAKE_INST_PLUSI		{ .inst_type = INST_PLUSI }
-#define MAKE_INST_MINUSI	{ .inst_type = INST_MINUSI }
-#define MAKE_INST_DIVI		{ .inst_type = INST_DIVI }
-#define MAKE_INST_MODI		{ .inst_type = INST_MODI }
-
 typedef struct {
     int64_t stack[RM_STACK_CAPACITY];    
     uint64_t rm_stack_size;
@@ -286,10 +275,32 @@ void rasm_translate_source(Rm *rm, String_View input_filepath) {
 		    rm->rm_program_size += 1;
 		}
 	    }
+	    else if(sv_eq(token, SV(inst_as_cstr(INST_PLUSI)))) {
+		rm->program[rm->rm_program_size].inst_type = INST_PLUSI;
+		rm->rm_program_size += 1;		
+	    }
+	    else if(sv_eq(token, SV(inst_as_cstr(INST_MINUSI)))) {
+		rm->program[rm->rm_program_size].inst_type = INST_MINUSI;
+		rm->rm_program_size += 1;		
+	    }
+	    else if(sv_eq(token, SV(inst_as_cstr(INST_MULI)))) {
+		rm->program[rm->rm_program_size].inst_type = INST_MULI;
+		rm->rm_program_size += 1;		
+	    }	    	       	    
+	    else if(sv_eq(token, SV(inst_as_cstr(INST_DIVI)))) {
+		rm->program[rm->rm_program_size].inst_type = INST_DIVI;
+		rm->rm_program_size += 1;		
+	    }	    	       	    
 	    else if(sv_eq(token, SV(inst_as_cstr(INST_HALT)))) {
 		rm->program[rm->rm_program_size].inst_type = INST_HALT;
 		rm->rm_program_size += 1;
-	    }	    
+	    }
+	    else {
+		fprintf(stderr, ""SV_Fmt":%d: ERROR unknown instruction `"SV_Fmt"`\n",
+		SV_Arg(input_filepath), line_number, SV_Arg(token));
+		exit(1);
+	    }
+	    
 	}
     }
 }
@@ -360,6 +371,7 @@ Err rm_execute_inst(Rm *rm) {
     }
     
     Inst inst = rm->program[rm->ip];
+    // printf("Cur Inst: %s\n", inst_as_cstr(inst.inst_type));
     switch(inst.inst_type) {
     case INST_NOP: {
 	rm->ip += 1;

@@ -1,4 +1,4 @@
+push 50
 push 10
-push 20
-push 30
+divi
 halt
