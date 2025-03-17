@@ -422,7 +422,7 @@ void rasm_translate_source(Rm *rm, String_View input_filepath) {
 	    }
 	    rm->rm_program_size += 1;
 	}
-	printf("------------\n");
+	// printf("------------\n");
     }
 
     for(size_t i = 0; i < rm->deferred_operands_size; ++i) {
