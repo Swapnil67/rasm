@@ -45,6 +45,11 @@ typedef enum {
     INST_MULI,
     INST_DIVI,
     INST_MODI,
+
+    INST_GT,
+    INST_GTE,
+    INST_LT,
+    INST_LTE,
 } Inst_Type;
 
 typedef uint64_t Inst_Addr;
@@ -131,10 +136,10 @@ typedef struct Rm_File_Meta Rm_File_Meta;
 
 const char* err_as_cstr(Err err) {
     switch(err) {
-    case ERR_OK: return "ERR_OK";
-    case ERR_ILLEGAL_INST: return "ERR_ILLEGAL_INST";
-    case ERR_STACK_OVERFLOW: return "ERR_STACK_OVERFLOW";
-    case ERR_STACK_UNDERFLOW: return "ERR_STACK_UNDERFLOW";
+    case ERR_OK:		return "ERR_OK";
+    case ERR_ILLEGAL_INST:	return "ERR_ILLEGAL_INST";
+    case ERR_STACK_OVERFLOW:	return "ERR_STACK_OVERFLOW";
+    case ERR_STACK_UNDERFLOW:	return "ERR_STACK_UNDERFLOW";
     default:
 	return "Unknown Err";
     }
@@ -142,17 +147,22 @@ const char* err_as_cstr(Err err) {
 
 const char* inst_to_cstr(Inst_Type type) {
     switch(type) {
-    case INST_NOP: return "INST_NOP";
-    case INST_HALT: return "INST_HALT";
-    case INST_PUSH: return "INST_PUSH";
-    case INST_DUP: return "INST_DUP";
-    case INST_JMP: return "INST_JMP";
+    case INST_NOP:	return "INST_NOP";
+    case INST_HALT:	return "INST_HALT";
+    case INST_PUSH:	return "INST_PUSH";
+    case INST_DUP:	return "INST_DUP";
+    case INST_JMP:	return "INST_JMP";
     
-    case INST_PLUSI: return "INST_PLUSI";
-    case INST_MINUSI: return "INST_MINUSI";
-    case INST_MULI: return "INST_MULI";
-    case INST_DIVI: return "INST_DIVI";
-    case INST_MODI: return "INST_MODI";
+    case INST_PLUSI:	return "INST_PLUSI";
+    case INST_MINUSI:	return "INST_MINUSI";
+    case INST_MULI:	return "INST_MULI";
+    case INST_DIVI:	return "INST_DIVI";
+    case INST_MODI:	return "INST_MODI";
+    
+    case INST_GT:	return "INST_GT";
+    case INST_GTE:	return "INST_GTE";
+    case INST_LT:	return "INST_LT";
+    case INST_LTE:	return "INST_LTE";
 default:
     return "Unknown type";
     }
@@ -160,17 +170,22 @@ default:
 
 const char* inst_as_cstr(Inst_Type type) {
     switch(type) {
-    case INST_NOP: return "nop";
-    case INST_HALT: return "halt";
-    case INST_PUSH: return "push";
-    case INST_DUP: return "dup";
-    case INST_JMP: return "jmp";
+    case INST_NOP:	return "nop";
+    case INST_HALT:	return "halt";
+    case INST_PUSH:	return "push";
+    case INST_DUP:	return "dup";
+    case INST_JMP:	return "jmp";
     
-    case INST_PLUSI: return "plusi";
-    case INST_MINUSI: return "minusi";
-    case INST_MULI: return "muli";
-    case INST_DIVI: return "divi";
-    case INST_MODI: return "modi";
+    case INST_PLUSI:	return "plusi";
+    case INST_MINUSI:	return "minusi";
+    case INST_MULI:	return "muli";
+    case INST_DIVI:	return "divi";
+    case INST_MODI:	return "modi";
+    
+    case INST_GT:	return "gt";
+    case INST_GTE:	return "gte";
+    case INST_LT:	return "lt";
+    case INST_LTE:	return "lte";
 default:
     return "Unknown type";
     }
@@ -178,17 +193,23 @@ default:
 
 bool inst_has_operand(Inst_Type type) {
     switch(type) {
-    case INST_NOP: return false;
-    case INST_HALT: return false;
-    case INST_PUSH: return true;
-    case INST_DUP: return true;
-    case INST_JMP: return true;
+    case INST_NOP:	return false;
+    case INST_HALT:	return false;
+    case INST_PUSH:	return true;
+    case INST_DUP:	return true;
+    case INST_JMP:	return true;
     
-    case INST_PLUSI: return false;
-    case INST_MINUSI: return false;
-    case INST_MULI: return false;
-    case INST_DIVI: return false;
-    case INST_MODI: return false;
+    case INST_PLUSI:	return false;
+    case INST_MINUSI:	return false;
+    case INST_MULI:	return false;
+    case INST_DIVI:	return false;
+    case INST_MODI:	return false;
+    
+    case INST_GT:	return false;
+    case INST_GTE:	return false;
+    case INST_LT:	return false;
+    case INST_LTE:	return false;
+    
 default:
     fprintf(stderr, "ERROR: unknown Inst_Type\n");
     exit(1);
@@ -256,22 +277,22 @@ String_View arena_slurp_file(Rm *rm, String_View filepath) {
     return (String_View) { .count = n, .data = buffer }; 
 }
 
-static void show_bindings(Rm *rm) {
-    printf("\n ------ Bindings ----- \n");
-    for(size_t i = 0; i < rm->bindings_size; ++i) {
-	printf("Name: "SV_Fmt", addr: %"PRIu64"\n",
-	        SV_Arg(rm->bindings[i].name), rm->bindings[i].value);
-    }    
-}
+// static void show_bindings(Rm *rm) {
+//     printf("\n ------ Bindings ----- \n");
+//     for(size_t i = 0; i < rm->bindings_size; ++i) {
+// 	printf("Name: "SV_Fmt", addr: %"PRIu64"\n",
+// 	        SV_Arg(rm->bindings[i].name), rm->bindings[i].value);
+//     }    
+// }
 
 
-static void show_deferred_operands(Rm *rm) {
-    printf("\n ------ Deferred_Operands ----- \n");
-    for(size_t i = 0; i < rm->deferred_operands_size; ++i) {
-	printf("Name: "SV_Fmt", addr: %"PRIu64"\n",
-	        SV_Arg(rm->deferred_operands[i].name), rm->deferred_operands[i].addr);
-    }
-}
+// static void show_deferred_operands(Rm *rm) {
+//     printf("\n ------ Deferred_Operands ----- \n");
+//     for(size_t i = 0; i < rm->deferred_operands_size; ++i) {
+// 	printf("Name: "SV_Fmt", addr: %"PRIu64"\n",
+// 	        SV_Arg(rm->deferred_operands[i].name), rm->deferred_operands[i].addr);
+//     }
+// }
 
 
 // * Add new deferred_operand to deferred_operands array
@@ -323,8 +344,7 @@ void rasm_translate_source(Rm *rm, String_View input_filepath) {
     int line_number = 0;
 
     while(original_source.count > 0) {
-	String_View line = sv_chop_by_delim(&original_source, '\n');
-	// printf("Line: "SV_Fmt"\n", SV_Arg(line));
+	String_View line = sv_trim(sv_chop_by_delim(&original_source, '\n'));
 	
 	line_number += 1;
 	// Check if comment
@@ -332,6 +352,8 @@ void rasm_translate_source(Rm *rm, String_View input_filepath) {
 	    continue;
 	}
 
+	// printf("Line: "SV_Fmt"\n", SV_Arg(line));
+		
 	String_View token = sv_trim(sv_chop_by_delim(&line, ' '));
 	// printf("Token: "SV_Fmt"\n", SV_Arg(token));
 
@@ -411,6 +433,9 @@ void rasm_translate_source(Rm *rm, String_View input_filepath) {
 	    }	    	       	    
 	    else if(sv_eq(token, SV(inst_as_cstr(INST_DIVI)))) {
 		rm->program[rm->rm_program_size].inst_type = INST_DIVI;
+	    }
+    	    else if(sv_eq(token, SV(inst_as_cstr(INST_GTE)))) {
+		rm->program[rm->rm_program_size].inst_type = INST_GTE;
 	    }	    	       	    
 	    else if(sv_eq(token, SV(inst_as_cstr(INST_HALT)))) {
 		rm->program[rm->rm_program_size].inst_type = INST_HALT;
@@ -505,7 +530,15 @@ Err rm_execute_inst(Rm *rm) {
     }
     
     Inst inst = rm->program[rm->ip];
-    // printf("Cur Inst: %s\n", inst_as_cstr(inst.inst_type));
+
+    // * Only for debugging
+    // printf("    %s", inst_as_cstr(inst.inst_type));
+    // if(inst_has_operand(inst.inst_type)) {
+    // 	printf(" %ld", inst.inst_operand);
+    // }
+    // printf("\n");
+    
+
     switch(inst.inst_type) {
     case INST_NOP: {
 	rm->ip += 1;
@@ -597,8 +630,52 @@ Err rm_execute_inst(Rm *rm) {
 	rm->stack[rm->rm_stack_size-2] = first_op % second_op;
 	rm->ip += 1;
 	rm->rm_stack_size -= 1;
+    } break;
+
+    case INST_GT: {
+	if(rm->rm_stack_size < 2) {
+	    return ERR_STACK_UNDERFLOW;
+	}
+	int64_t first_op = (int64_t)rm->stack[rm->rm_stack_size - 2];
+	int64_t second_op = (int64_t)rm->stack[rm->rm_stack_size - 1];
+	rm->stack[rm->rm_stack_size-2] = first_op > second_op;
+	rm->ip += 1;
+	rm->rm_stack_size -= 1;	
     } break;	
 
+    case INST_GTE: {
+	if(rm->rm_stack_size < 2) {
+	    return ERR_STACK_UNDERFLOW;
+	}
+	int64_t first_op = (int64_t)rm->stack[rm->rm_stack_size - 2];
+	int64_t second_op = (int64_t)rm->stack[rm->rm_stack_size - 1];
+	rm->stack[rm->rm_stack_size-2] = first_op >= second_op;
+	rm->ip += 1;
+	rm->rm_stack_size -= 1;	
+    } break;
+
+    case INST_LT: {
+	if(rm->rm_stack_size < 2) {
+	    return ERR_STACK_UNDERFLOW;
+	}
+	int64_t first_op = (int64_t)rm->stack[rm->rm_stack_size - 2];
+	int64_t second_op = (int64_t)rm->stack[rm->rm_stack_size - 1];
+	rm->stack[rm->rm_stack_size-2] = first_op < second_op;
+	rm->ip += 1;
+	rm->rm_stack_size -= 1;	
+    } break;	    
+
+    case INST_LTE: {
+	if(rm->rm_stack_size < 2) {
+	    return ERR_STACK_UNDERFLOW;
+	}
+	int64_t first_op = (int64_t)rm->stack[rm->rm_stack_size - 2];
+	int64_t second_op = (int64_t)rm->stack[rm->rm_stack_size - 1];
+	rm->stack[rm->rm_stack_size-2] = first_op <= second_op;
+	rm->ip += 1;
+	rm->rm_stack_size -= 1;	
+    } break;
+    
     default:
     	printf("Unknown Instruction\n");
 
