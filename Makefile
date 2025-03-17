@@ -1,4 +1,4 @@
-CFLAGS=-Wall -Wextra -Wswitch-enum -Wmissing-prototypes -Wconversion -ggdb -std=c11 -pedantic
+CFLAGS=-Wall -Wextra -Wswitch-enum -Wmissing-prototypes -Wconversion -Wno-missing-braces -fno-strict-aliasing -ggdb -std=c11 -pedantic
 LIBS=
 
 .PHONY: all
