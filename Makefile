@@ -2,10 +2,13 @@ CFLAGS=-Wall -Wextra -Wswitch-enum -Wmissing-prototypes -Wconversion -ggdb -std=
 LIBS=
 
 .PHONY: all
-all: rasm rme
+all: rasm rme derasm
 
 rasm: ./rasm.c ./sv.h ./rasm.h
 	$(CC) $(CFLAGS) -o rasm ./rasm.c $(LIBS)
 
 rme: ./rme.c ./sv.h ./rasm.h
 	$(CC) $(CFLAGS) -o rme ./rme.c $(LIBS)
+
+derasm: ./derasm.c ./sv.h ./rasm.h
+	$(CC) $(CFLAGS) -o derasm ./derasm.c $(LIBS)

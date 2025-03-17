@@ -1,4 +1,7 @@
-push 50
-push 10
-divi
-halt
+main:
+	push 50
+	push 10
+	jmp bar 
+	push 10
+bar:
+	halt
