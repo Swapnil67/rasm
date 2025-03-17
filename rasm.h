@@ -324,7 +324,7 @@ void rasm_translate_source(Rm *rm, String_View input_filepath) {
 
     while(original_source.count > 0) {
 	String_View line = sv_chop_by_delim(&original_source, '\n');
-	printf("Line: "SV_Fmt"\n", SV_Arg(line));
+	// printf("Line: "SV_Fmt"\n", SV_Arg(line));
 	
 	line_number += 1;
 	// Check if comment
@@ -333,7 +333,7 @@ void rasm_translate_source(Rm *rm, String_View input_filepath) {
 	}
 
 	String_View token = sv_trim(sv_chop_by_delim(&line, ' '));
-	printf("Token: "SV_Fmt"\n", SV_Arg(token));
+	// printf("Token: "SV_Fmt"\n", SV_Arg(token));
 
 	if(token.count > 0 && *token.data == RASM_PP_SYMBOL) {
 	    // TODO Check for pre-processors
@@ -359,10 +359,23 @@ void rasm_translate_source(Rm *rm, String_View input_filepath) {
 	if(token.count > 0) {
 	    // * Get the operand
 	    String_View operand = sv_trim(sv_chop_by_delim(&line, RASM_COMMENT_SYMBOL));
-	    printf("operand: "SV_Fmt"\n", SV_Arg(operand));
+	    // printf("operand: "SV_Fmt"\n", SV_Arg(operand));
 	    
 	    if(sv_eq(token, SV(inst_as_cstr(INST_PUSH)))) {
 		Inst_Type inst_type = INST_PUSH;
+		rm->program[rm->rm_program_size].inst_type = inst_type;
+
+		char *str = arena_sv_to_cstr(rm, operand);
+		char *endptr;
+		int64_t val = strtoll(str, &endptr, 10);
+		if(endptr == str) {
+		    fprintf(stderr, "No digits were found\n");
+		    exit(1);
+		}
+		rm->program[rm->rm_program_size].inst_operand = (uint64_t) val;
+	    }   
+	    else if(sv_eq(token, SV(inst_as_cstr(INST_DUP)))) {
+		Inst_Type inst_type = INST_DUP;
 		rm->program[rm->rm_program_size].inst_type = inst_type;
 
 		char *str = arena_sv_to_cstr(rm, operand);
@@ -422,8 +435,8 @@ void rasm_translate_source(Rm *rm, String_View input_filepath) {
 	}
     }
     
-    show_bindings(rm);
-    show_deferred_operands(rm);
+    // show_bindings(rm);
+    // show_deferred_operands(rm);
 }
 
 void rm_dump_stack(FILE *stream, Rm *rm) {
