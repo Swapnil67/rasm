@@ -1,4 +1,8 @@
-push 50
-push 10
-divi
-halt
+main:
+	push 0
+loop:
+	dup 0
+	push 1
+	plusi
+	jmp loop
+	halt

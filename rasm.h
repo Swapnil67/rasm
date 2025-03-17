@@ -20,6 +20,8 @@
 
 #define RM_STACK_CAPACITY 1024
 #define RM_PROGRAM_CAPACITY 1024
+#define RM_BINDING_CAPACITY 1024
+#define RM_DEFERRED_OPERAND_CAPACITY 1024
 #define RM_ARENA_CAPACITY  (10 * 1000 * 1000)
 
 #define ARRAY_SIZE(arr) sizeof(arr)/sizeof(arr[0])
@@ -45,10 +47,17 @@ typedef enum {
     INST_MODI,
 } Inst_Type;
 
+typedef uint64_t Inst_Addr;
+
 typedef struct {
     Inst_Type  inst_type;
     uint64_t   inst_operand;
 } Inst;
+
+typedef struct {
+    Inst_Addr addr;
+    String_View name;
+} Deferred_Operand;
 
 const char* inst_as_cstr(Inst_Type type);
 const char* inst_to_cstr(Inst_Type type);
@@ -63,6 +72,12 @@ typedef enum {
 } Err;
 const char* err_as_cstr(Err err);
 
+
+typedef struct {
+    String_View name;
+    Inst_Addr value;
+} Binding;
+
 typedef struct {
     int64_t stack[RM_STACK_CAPACITY];    
     uint64_t rm_stack_size;
@@ -70,6 +85,12 @@ typedef struct {
     Inst program[RM_PROGRAM_CAPACITY];
     uint64_t rm_program_size;
     uint64_t ip;
+
+    Binding bindings[RM_BINDING_CAPACITY];
+    size_t bindings_size;
+    
+    Deferred_Operand deferred_operands[RM_DEFERRED_OPERAND_CAPACITY];
+    size_t deferred_operands_size;
 
     char arena[RM_ARENA_CAPACITY];
     size_t arena_size;
@@ -80,6 +101,12 @@ typedef struct {
 void *arena_sv_to_cstr(Rm *rm, String_View sv);
 void *arena_alloc(Rm *rm, size_t n);
 String_View arena_slurp_file(Rm *rm, String_View filepath);
+
+
+bool resolve_bind_value(Rm *rm, String_View name, Inst_Addr *addr);
+bool rasm_bind_value(Rm *rm, String_View name);
+void rasm_push_deferred_operand(Rm *rm, String_View operand, Inst_Addr addr);
+
 void rasm_translate_source(Rm *rm, String_View original_source);
 void rasm_save_to_file(Rm *rm, String_View filepath);
 
@@ -229,6 +256,65 @@ String_View arena_slurp_file(Rm *rm, String_View filepath) {
     return (String_View) { .count = n, .data = buffer }; 
 }
 
+static void show_bindings(Rm *rm) {
+    printf("\n ------ Bindings ----- \n");
+    for(size_t i = 0; i < rm->bindings_size; ++i) {
+	printf("Name: "SV_Fmt", addr: %"PRIu64"\n",
+	        SV_Arg(rm->bindings[i].name), rm->bindings[i].value);
+    }    
+}
+
+
+static void show_deferred_operands(Rm *rm) {
+    printf("\n ------ Deferred_Operands ----- \n");
+    for(size_t i = 0; i < rm->deferred_operands_size; ++i) {
+	printf("Name: "SV_Fmt", addr: %"PRIu64"\n",
+	        SV_Arg(rm->deferred_operands[i].name), rm->deferred_operands[i].addr);
+    }
+}
+
+
+// * Add new deferred_operand to deferred_operands array
+void rasm_push_deferred_operand(Rm *rm, String_View operand, Inst_Addr addr) {
+    assert(rm->deferred_operands_size < RM_DEFERRED_OPERAND_CAPACITY);
+    rm->deferred_operands[rm->deferred_operands_size++] = (Deferred_Operand) {
+	.addr = addr,
+	.name = operand
+    };
+}
+
+// * Gets the value of bind value to a label
+// * Function => address
+// * Other    => Literal
+// TODO change addr parameter to WORD type
+bool resolve_bind_value(Rm *rm, String_View name, Inst_Addr *addr) {
+    for(size_t i = 0; i < rm->bindings_size; ++i) {
+	if(sv_eq(name, rm->bindings[i].name)) {
+	    *addr = rm->bindings[i].value;
+	    return true;
+	}
+    }
+    return false;
+}
+
+// * Binds the label name with it's address
+bool rasm_bind_value(Rm *rm, String_View name) {
+    // * Check if label already bind
+
+    // TODO change this to WORD
+    Inst_Addr ignore;
+    if(resolve_bind_value(rm, name, &ignore)) {
+	return false;
+    }
+    
+    rm->bindings[rm->bindings_size++] = (Binding) {
+	.value = (uint64_t) rm->rm_program_size,
+	.name = name
+    };
+    
+    return true;
+}
+
 // * Translate RM program from Text To Binary (create .rm bytecode executables)
 void rasm_translate_source(Rm *rm, String_View input_filepath) {
     // * Load the program from file
@@ -246,63 +332,111 @@ void rasm_translate_source(Rm *rm, String_View input_filepath) {
 	    continue;
 	}
 
-	String_View token = sv_chop_by_delim(&line, ' ');
+	String_View token = sv_trim(sv_chop_by_delim(&line, ' '));
 	// printf("Token: "SV_Fmt"\n", SV_Arg(token));
-	
+
 	if(token.count > 0 && *token.data == RASM_PP_SYMBOL) {
 	    // TODO Check for pre-processors
 	}
 
-	// TODO Check for labels
+	// * Check for labels
+	if(token.data[token.count - 1] == ':') {
+	    String_View name = {
+		.count = token.count - 1,
+		.data = token.data
+	    };
+	    if(!rasm_bind_value(rm, name)) {
+		fprintf(stderr, ""SV_Fmt":%d: ERROR: binding `"SV_Fmt"` is already defined\n",
+		SV_Arg(input_filepath), line_number, SV_Arg(token));
+		exit(1);
+	    }
 
+	    // * Check if inst after ':'
+	    token = sv_trim(sv_chop_by_delim(&line, ' '));
+	}
+	
 	// Instructions
 	if(token.count > 0) {
 	    // * Get the operand
 	    String_View operand = sv_trim(sv_chop_by_delim(&line, RASM_COMMENT_SYMBOL));
+	    // printf("operand: "SV_Fmt"\n", SV_Arg(operand));
+	    
 	    if(sv_eq(token, SV(inst_as_cstr(INST_PUSH)))) {
 		Inst_Type inst_type = INST_PUSH;
-		rm->program[rm->rm_program_size].inst_type = INST_PUSH;
-		
-		if(inst_has_operand(inst_type)) {
-		    char *str = arena_sv_to_cstr(rm, operand);
-		    char *endptr;
-		    int64_t val = strtoll(str, &endptr, 10);
-		    if(endptr == str) {
-			fprintf(stderr, "No digits were found\n");
-			exit(1);
-		    }
-		    rm->program[rm->rm_program_size].inst_operand = (uint64_t) val;
-		    rm->rm_program_size += 1;
+		rm->program[rm->rm_program_size].inst_type = inst_type;
+
+		char *str = arena_sv_to_cstr(rm, operand);
+		char *endptr;
+		int64_t val = strtoll(str, &endptr, 10);
+		if(endptr == str) {
+		    fprintf(stderr, "No digits were found\n");
+		    exit(1);
 		}
+		rm->program[rm->rm_program_size].inst_operand = (uint64_t) val;
+	    }   
+	    else if(sv_eq(token, SV(inst_as_cstr(INST_DUP)))) {
+		Inst_Type inst_type = INST_DUP;
+		rm->program[rm->rm_program_size].inst_type = inst_type;
+
+		char *str = arena_sv_to_cstr(rm, operand);
+		char *endptr;
+		int64_t val = strtoll(str, &endptr, 10);
+		if(endptr == str) {
+		    fprintf(stderr, "No digits were found\n");
+		    exit(1);
+		}
+		rm->program[rm->rm_program_size].inst_operand = (uint64_t) val;
+	    }
+	    else if(sv_eq(token, SV(inst_as_cstr(INST_JMP)))) {
+		Inst_Type inst_type = INST_JMP;
+		rm->program[rm->rm_program_size].inst_type = inst_type;
+		// printf("Token IN: "SV_Fmt"\n", SV_Arg(token));
+		
+		if(operand.count == 0) {
+		    fprintf(stderr,
+		            ""SV_Fmt":%d: ERROR: Expected label.\n", SV_Arg(input_filepath), line_number);
+		    exit(1);		    
+		}
+
+		rasm_push_deferred_operand(rm, operand, rm->rm_program_size);		
 	    }
 	    else if(sv_eq(token, SV(inst_as_cstr(INST_PLUSI)))) {
 		rm->program[rm->rm_program_size].inst_type = INST_PLUSI;
-		rm->rm_program_size += 1;		
 	    }
 	    else if(sv_eq(token, SV(inst_as_cstr(INST_MINUSI)))) {
 		rm->program[rm->rm_program_size].inst_type = INST_MINUSI;
-		rm->rm_program_size += 1;		
 	    }
 	    else if(sv_eq(token, SV(inst_as_cstr(INST_MULI)))) {
 		rm->program[rm->rm_program_size].inst_type = INST_MULI;
-		rm->rm_program_size += 1;		
 	    }	    	       	    
 	    else if(sv_eq(token, SV(inst_as_cstr(INST_DIVI)))) {
 		rm->program[rm->rm_program_size].inst_type = INST_DIVI;
-		rm->rm_program_size += 1;		
 	    }	    	       	    
 	    else if(sv_eq(token, SV(inst_as_cstr(INST_HALT)))) {
 		rm->program[rm->rm_program_size].inst_type = INST_HALT;
-		rm->rm_program_size += 1;
 	    }
 	    else {
 		fprintf(stderr, ""SV_Fmt":%d: ERROR unknown instruction `"SV_Fmt"`\n",
 		SV_Arg(input_filepath), line_number, SV_Arg(token));
 		exit(1);
 	    }
-	    
+	    rm->rm_program_size += 1;
+	}
+	printf("------------\n");
+    }
+
+    for(size_t i = 0; i < rm->deferred_operands_size; ++i) {
+	String_View binding = rm->deferred_operands[i].name;
+	Inst_Addr addr = rm->deferred_operands[i].addr;
+	if(!resolve_bind_value(rm, binding, &rm->program[addr].inst_operand)) {
+	    fprintf(stderr, ""SV_Fmt" ERROR: unknown binding `"SV_Fmt"`\n",
+	    SV_Arg(input_filepath), SV_Arg(binding));	    
+	    exit(1);	    
 	}
     }
+    
+    // show_bindings(rm);
+    // show_deferred_operands(rm);
 }
 
 void rm_dump_stack(FILE *stream, Rm *rm) {
