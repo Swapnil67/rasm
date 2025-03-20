@@ -39,6 +39,7 @@ typedef enum {
     INST_PUSH,
     INST_DUP,
     INST_JMP,
+    INST_JMPIF,
 
     INST_PLUSI,
     INST_MINUSI,
@@ -152,6 +153,7 @@ const char* inst_to_cstr(Inst_Type type) {
     case INST_PUSH:	return "INST_PUSH";
     case INST_DUP:	return "INST_DUP";
     case INST_JMP:	return "INST_JMP";
+    case INST_JMPIF:	return "INST_JMPIF";
     
     case INST_PLUSI:	return "INST_PLUSI";
     case INST_MINUSI:	return "INST_MINUSI";
@@ -175,6 +177,7 @@ const char* inst_as_cstr(Inst_Type type) {
     case INST_PUSH:	return "push";
     case INST_DUP:	return "dup";
     case INST_JMP:	return "jmp";
+    case INST_JMPIF:	return "jmp_if";
     
     case INST_PLUSI:	return "plusi";
     case INST_MINUSI:	return "minusi";
@@ -198,6 +201,7 @@ bool inst_has_operand(Inst_Type type) {
     case INST_PUSH:	return true;
     case INST_DUP:	return true;
     case INST_JMP:	return true;
+    case INST_JMPIF:	return true;
     
     case INST_PLUSI:	return false;
     case INST_MINUSI:	return false;
@@ -422,6 +426,19 @@ void rasm_translate_source(Rm *rm, String_View input_filepath) {
 
 		rasm_push_deferred_operand(rm, operand, rm->rm_program_size);		
 	    }
+	    else if(sv_eq(token, SV(inst_as_cstr(INST_JMPIF)))) {
+		Inst_Type inst_type = INST_JMPIF;
+		rm->program[rm->rm_program_size].inst_type = inst_type;
+		// printf("Token IN: "SV_Fmt"\n", SV_Arg(token));
+		
+		if(operand.count == 0) {
+		    fprintf(stderr,
+		            ""SV_Fmt":%d: ERROR: Expected label.\n", SV_Arg(input_filepath), line_number);
+		    exit(1);		    
+		}
+
+		rasm_push_deferred_operand(rm, operand, rm->rm_program_size);		
+	    }	    
 	    else if(sv_eq(token, SV(inst_as_cstr(INST_PLUSI)))) {
 		rm->program[rm->rm_program_size].inst_type = INST_PLUSI;
 	    }
@@ -536,8 +553,7 @@ Err rm_execute_inst(Rm *rm) {
     // if(inst_has_operand(inst.inst_type)) {
     // 	printf(" %ld", inst.inst_operand);
     // }
-    // printf("\n");
-    
+    // printf("\n");    
 
     switch(inst.inst_type) {
     case INST_NOP: {
@@ -575,6 +591,21 @@ Err rm_execute_inst(Rm *rm) {
 	rm->ip = inst.inst_operand;	    
     } break;	
 
+    case INST_JMPIF: {
+	if(rm->rm_stack_size < 1) {
+	    return ERR_STACK_UNDERFLOW;
+	}
+	rm->rm_stack_size -= 1;		
+	// * If the top of the stack is true then jmp
+	if((int64_t)rm->stack[rm->rm_stack_size]) {
+	    // printf("JMP\n");
+	    rm->ip = inst.inst_operand;
+	} else {
+	    // printf("DON'T JMP\n");	    
+	    rm->ip += 1;
+	}
+    } break;	
+    
     case INST_PLUSI: {
 	if(rm->rm_stack_size < 2) {
 	    return ERR_STACK_UNDERFLOW;

@@ -1,8 +1,8 @@
 main:
-	push 20
 	push 10
+	push 20
 	gte
-	; jmp_if skip
-	; push 10
-	; skip:
+	jmp_if skip
+	push 30
+skip:
 	halt
