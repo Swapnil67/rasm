@@ -433,10 +433,10 @@ void rasm_translate_source(Rm *rm, String_View input_filepath) {
 		
 		if(operand.count == 0) {
 		    fprintf(stderr,
-		            ""SV_Fmt":%d: ERROR: Expected label.\n", SV_Arg(input_filepath), line_number);
+       		           ""SV_Fmt":%d: ERROR: Expected label.\n",
+		           SV_Arg(input_filepath), line_number);
 		    exit(1);		    
 		}
-
 		rasm_push_deferred_operand(rm, operand, rm->rm_program_size);		
 	    }	    
 	    else if(sv_eq(token, SV(inst_as_cstr(INST_PLUSI)))) {
