@@ -39,7 +39,7 @@ int main(int argc, char *argv[]) {
     for(size_t i = 0; i < rm.rm_program_size; ++i) {
 	printf("    %s", inst_as_cstr(rm.program[i].inst_type));
 	if(inst_has_operand(rm.program[i].inst_type)) {
-	    printf(" %ld", rm.program[i].inst_operand);
+	    printf(" %"PRIu64"", rm.program[i].inst_operand.as_u64);
 	}
 	printf("\n");
     }

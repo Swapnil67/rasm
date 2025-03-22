@@ -27,9 +27,8 @@ int main(int argc, char *argv[]) {
     static Rm rm = {0};
 
     shift(&argc, &argv);
-
     // * Get the input .rasm file
-    String_View input_filepath;
+    String_View input_filepath = {0};
     if(argc > 0) {
 	const char *input_file_str = shift(&argc, &argv);
 	input_filepath = SV(input_file_str);
@@ -42,7 +41,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Get the output .rm file
-    String_View output_filepath;
+    String_View output_filepath = {0};
     if(argc > 0) {
 	const char *output_file_str = shift(&argc, &argv);
 	output_filepath = SV(output_file_str);

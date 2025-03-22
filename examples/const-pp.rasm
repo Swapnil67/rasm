@@ -1,0 +1,5 @@
+%const N 10
+
+main:
+	push 10	
+	halt
