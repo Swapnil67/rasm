@@ -55,9 +55,19 @@ typedef enum {
 
 typedef uint64_t Inst_Addr;
 
+typedef union {
+    uint64_t as_u64;
+    int64_t as_i64;
+    double as_f64;
+    void *as_ptr;
+} Word;
+
+Word word_as_u64(uint64_t u64);
+Word word_as_i64(int64_t i64);
+
 typedef struct {
-    Inst_Type  inst_type;
-    uint64_t   inst_operand;
+    Inst_Type inst_type;
+    Word inst_operand;
 } Inst;
 
 typedef struct {
@@ -78,10 +88,9 @@ typedef enum {
 } Err;
 const char* err_as_cstr(Err err);
 
-
 typedef struct {
     String_View name;
-    Inst_Addr value;
+    Word value;
 } Binding;
 
 typedef struct {
@@ -108,9 +117,9 @@ void *arena_sv_to_cstr(Rm *rm, String_View sv);
 void *arena_alloc(Rm *rm, size_t n);
 String_View arena_slurp_file(Rm *rm, String_View filepath);
 
-
-bool resolve_bind_value(Rm *rm, String_View name, Inst_Addr *addr);
-bool rasm_bind_value(Rm *rm, String_View name);
+bool resolve_bind_value(Rm *rm, String_View name, Word *addr);
+bool rasm_bind_value(Rm *rm, String_View name, Word value);
+bool rasm_translate_literal(Rm *rm, String_View operand, Word *output);
 void rasm_push_deferred_operand(Rm *rm, String_View operand, Inst_Addr addr);
 
 void rasm_translate_source(Rm *rm, String_View original_source);
@@ -134,6 +143,13 @@ typedef struct Rm_File_Meta Rm_File_Meta;
 
 #ifdef RM_IMPLEMENTATION
 
+Word word_as_u64(uint64_t u64) {
+    return (Word) { .as_u64 = u64 };
+}
+
+Word word_as_i64(int64_t i64) {
+    return (Word) { .as_i64 = i64 };
+}
 
 const char* err_as_cstr(Err err) {
     switch(err) {
@@ -236,59 +252,13 @@ void *arena_alloc(Rm *rm, size_t n) {
     return result;
 }
 
-String_View arena_slurp_file(Rm *rm, String_View filepath) {
-    const char *filepath_cstr = arena_sv_to_cstr(rm, filepath);
-
-    FILE *file_fd = fopen(filepath_cstr, "r");
-    if(file_fd == NULL) {
-	fprintf(stderr, "ERROR: Could Not read File %s\n", strerror(errno));
-	exit(1);
-    }
-
-    if(fseek(file_fd, 0, SEEK_END) < 0) {
-	fprintf(stderr, "ERROR: Could Not read File %s\n", strerror(errno));
-	exit(1);
-    }
-
-    long m = ftell(file_fd);
-    if(m < 0) {
-	fprintf(stderr, "ERROR: Could Not read File %s\n", strerror(errno));
-	exit(1);
-    }
-
-    // * Allocate buffer of m size
-    void *buffer = arena_alloc(rm, (size_t)m);
-    if(buffer == NULL) {
-	fprintf(stderr, "ERROR: Could Not allocate memory for the file %s\n", strerror(errno));
-	exit(1);
-    }
-
-    // * Set file pos at the start of file
-    if(fseek(file_fd, 0, SEEK_SET) < 0) {
-	fprintf(stderr, "ERROR: Could Not read File %s\n", strerror(errno));
-	exit(1);
-    }
-
-    // Copy from 0 - m into buffer
-    size_t n = fread(buffer, 1, (size_t)m, file_fd);
-    if(ferror(file_fd)) {
-	fprintf(stderr, "ERROR: Could Not read File %s\n", strerror(errno));
-	exit(1);
-    }
-    
-    fclose(file_fd);
-
-    return (String_View) { .count = n, .data = buffer }; 
-}
-
 // static void show_bindings(Rm *rm) {
 //     printf("\n ------ Bindings ----- \n");
 //     for(size_t i = 0; i < rm->bindings_size; ++i) {
-// 	printf("Name: "SV_Fmt", addr: %"PRIu64"\n",
-// 	        SV_Arg(rm->bindings[i].name), rm->bindings[i].value);
-//     }    
+// 	printf("Name: "SV_Fmt", val: %"PRIu64"\n",
+// 	        SV_Arg(rm->bindings[i].name), rm->bindings[i].value.as_u64);
+//     }
 // }
-
 
 // static void show_deferred_operands(Rm *rm) {
 //     printf("\n ------ Deferred_Operands ----- \n");
@@ -297,7 +267,6 @@ String_View arena_slurp_file(Rm *rm, String_View filepath) {
 // 	        SV_Arg(rm->deferred_operands[i].name), rm->deferred_operands[i].addr);
 //     }
 // }
-
 
 // * Add new deferred_operand to deferred_operands array
 void rasm_push_deferred_operand(Rm *rm, String_View operand, Inst_Addr addr) {
@@ -312,7 +281,7 @@ void rasm_push_deferred_operand(Rm *rm, String_View operand, Inst_Addr addr) {
 // * Function => address
 // * Other    => Literal
 // TODO change addr parameter to WORD type
-bool resolve_bind_value(Rm *rm, String_View name, Inst_Addr *addr) {
+bool resolve_bind_value(Rm *rm, String_View name, Word *addr) {
     for(size_t i = 0; i < rm->bindings_size; ++i) {
 	if(sv_eq(name, rm->bindings[i].name)) {
 	    *addr = rm->bindings[i].value;
@@ -323,20 +292,35 @@ bool resolve_bind_value(Rm *rm, String_View name, Inst_Addr *addr) {
 }
 
 // * Binds the label name with it's address
-bool rasm_bind_value(Rm *rm, String_View name) {
+bool rasm_bind_value(Rm *rm, String_View name, Word value) {
     // * Check if label already bind
 
     // TODO change this to WORD
-    Inst_Addr ignore;
+    Word ignore = {0};
     if(resolve_bind_value(rm, name, &ignore)) {
 	return false;
     }
     
     rm->bindings[rm->bindings_size++] = (Binding) {
-	.value = (uint64_t) rm->rm_program_size,
+	.value = value,
 	.name = name
     };
     
+    return true;
+}
+
+bool rasm_translate_literal(Rm *rm, String_View operand, Word *output) {
+
+    // * Check if number
+    char *str = arena_sv_to_cstr(rm, operand);
+    char *endptr;
+    Word result = {0};
+    result.as_u64 = strtoull(str, &endptr, 10);
+    if(endptr == str) {
+	return false;
+    }
+
+    *output = result;
     return true;
 }
 
@@ -361,96 +345,120 @@ void rasm_translate_source(Rm *rm, String_View input_filepath) {
 	String_View token = sv_trim(sv_chop_by_delim(&line, ' '));
 	// printf("Token: "SV_Fmt"\n", SV_Arg(token));
 
+	// * Pre-processor directive
 	if(token.count > 0 && *token.data == RASM_PP_SYMBOL) {
-	    // TODO Check for pre-processors
-	}
+	    token.count -= 1;
+	    token.data += 1;
+	    
+	    if(sv_eq(token, SV("const"))) {
+		String_View name = sv_trim(sv_chop_by_delim(&line, ' '));
+		if(name.count <= 0) {
+		    fprintf(stderr,
+		            ""SV_Fmt":%d: ERROR: label name expected.\n",
+		            SV_Arg(input_filepath), line_number);
+		    exit(1);
+		}
+		printf("value: "SV_Fmt"\n", SV_Arg(line));
+		
+		Word word = {0};
+		if(!rasm_translate_literal(rm, line, &word)) {
+		    fprintf(stderr,
+		            ""SV_Fmt":%d: ERROR: invalid literal.\n",
+		            SV_Arg(input_filepath), line_number);
+		    exit(1);		    
+		}
 
-	// * Check for labels
-	if(token.data[token.count - 1] == ':') {
-	    String_View name = {
-		.count = token.count - 1,
-		.data = token.data
-	    };
-	    if(!rasm_bind_value(rm, name)) {
-		fprintf(stderr, ""SV_Fmt":%d: ERROR: binding `"SV_Fmt"` is already defined\n",
-		SV_Arg(input_filepath), line_number, SV_Arg(token));
-		exit(1);
+		// * Bind the label
+		if(!rasm_bind_value(rm, name, word)) {
+		    fprintf(stderr, ""SV_Fmt":%d: ERROR: binding `"SV_Fmt"` is already bound \n",
+		    SV_Arg(input_filepath), line_number, SV_Arg(token));
+		    exit(1);		    
+		}
+
 	    }
-
-	    // * Check if inst after ':'
-	    token = sv_trim(sv_chop_by_delim(&line, ' '));
 	}
-	
-	// Instructions
-	if(token.count > 0) {
+	else {
 	    // * Get the operand
 	    String_View operand = sv_trim(sv_chop_by_delim(&line, RASM_COMMENT_SYMBOL));
-	    // printf("operand: "SV_Fmt"\n", SV_Arg(operand));
+	    // printf("operand: "SV_Fmt"\n", SV_Arg(operand));	
+
+	    // * Check for labels	    
+	    if(token.data[token.count - 1] == ':') {
+		String_View name = {
+		    .count = token.count - 1,
+		    .data = token.data
+		};
+		if(!rasm_bind_value(rm, name, word_as_u64(rm->rm_program_size))) {
+		    fprintf(stderr, ""SV_Fmt":%d: ERROR: binding `"SV_Fmt"` is already bound\n",
+		    SV_Arg(input_filepath), line_number, SV_Arg(token));
+		    exit(1);
+		}
+
+		// * Check if inst after ':'
+		token = sv_trim(sv_chop_by_delim(&line, ' '));
+	    }
 	    
-	    if(sv_eq(token, SV(inst_as_cstr(INST_PUSH)))) {
-		Inst_Type inst_type = INST_PUSH;
-		rm->program[rm->rm_program_size].inst_type = inst_type;
 
-		char *str = arena_sv_to_cstr(rm, operand);
-		char *endptr;
-		int64_t val = strtoll(str, &endptr, 10);
-		if(endptr == str) {
-		    fprintf(stderr, "No digits were found\n");
-		    exit(1);
-		}
-		rm->program[rm->rm_program_size].inst_operand = (uint64_t) val;
-	    }   
-	    else if(sv_eq(token, SV(inst_as_cstr(INST_DUP)))) {
-		Inst_Type inst_type = INST_DUP;
-		rm->program[rm->rm_program_size].inst_type = inst_type;
+	    // Instructions
+	    if(token.count > 0) {
+		if(sv_eq(token, SV(inst_as_cstr(INST_PUSH)))) {		   		  
+		    Inst_Type inst_type = INST_PUSH;
+		    rm->program[rm->rm_program_size].inst_type = inst_type;
+		    if(!rasm_translate_literal(rm,
+		                              operand,
+		                              &rm->program[rm->rm_program_size].inst_operand)) {
+			
+			rasm_push_deferred_operand(rm, operand, rm->rm_program_size);
+		    }
+		}   
+		else if(sv_eq(token, SV(inst_as_cstr(INST_DUP)))) {
+		    Inst_Type inst_type = INST_DUP;
+		    rm->program[rm->rm_program_size].inst_type = inst_type;
 
-		char *str = arena_sv_to_cstr(rm, operand);
-		char *endptr;
-		int64_t val = strtoll(str, &endptr, 10);
-		if(endptr == str) {
-		    fprintf(stderr, "No digits were found\n");
-		    exit(1);
+		    char *str = arena_sv_to_cstr(rm, operand);
+		    char *endptr;
+		    Word result = {0};
+		    result.as_u64 = strtoull(str, &endptr, 10);
+		    if(endptr == str) {
+			fprintf(stderr, "No digits were found\n");
+			exit(1);
+		    }
+		    rm->program[rm->rm_program_size].inst_operand = result;
 		}
-		rm->program[rm->rm_program_size].inst_operand = (uint64_t) val;
-	    }
-	    else if(sv_eq(token, SV(inst_as_cstr(INST_JMP)))) {
-		Inst_Type inst_type = INST_JMP;
-		rm->program[rm->rm_program_size].inst_type = inst_type;
-		// printf("Token IN: "SV_Fmt"\n", SV_Arg(token));
-		
-		if(operand.count == 0) {
-		    fprintf(stderr,
-		            ""SV_Fmt":%d: ERROR: Expected label.\n", SV_Arg(input_filepath), line_number);
-		    exit(1);		    
+		else if(sv_eq(token, SV(inst_as_cstr(INST_JMP)))) {
+		    Inst_Type inst_type = INST_JMP;
+		    rm->program[rm->rm_program_size].inst_type = inst_type;
+		    if(operand.count == 0) {
+			fprintf(stderr,
+			        ""SV_Fmt":%d: ERROR: Expected label.\n",
+			        SV_Arg(input_filepath), line_number);
+			exit(1);		    
+		    }
+		    rasm_push_deferred_operand(rm, operand, rm->rm_program_size);		
 		}
-
-		rasm_push_deferred_operand(rm, operand, rm->rm_program_size);		
-	    }
-	    else if(sv_eq(token, SV(inst_as_cstr(INST_JMPIF)))) {
-		Inst_Type inst_type = INST_JMPIF;
-		rm->program[rm->rm_program_size].inst_type = inst_type;
-		// printf("Token IN: "SV_Fmt"\n", SV_Arg(token));
-		
-		if(operand.count == 0) {
-		    fprintf(stderr,
-		            ""SV_Fmt":%d: ERROR: Expected label.\n", SV_Arg(input_filepath), line_number);
-		    exit(1);		    
+		else if(sv_eq(token, SV(inst_as_cstr(INST_JMPIF)))) {
+		    Inst_Type inst_type = INST_JMPIF;
+		    rm->program[rm->rm_program_size].inst_type = inst_type;
+		    if(operand.count == 0) {
+			fprintf(stderr,
+			       ""SV_Fmt":%d: ERROR: Expected label.\n",
+			       SV_Arg(input_filepath), line_number);
+			exit(1);		    
+		    }
+		    rasm_push_deferred_operand(rm, operand, rm->rm_program_size);		
+		}	    
+		else if(sv_eq(token, SV(inst_as_cstr(INST_PLUSI)))) {
+		    rm->program[rm->rm_program_size].inst_type = INST_PLUSI;
 		}
-
-		rasm_push_deferred_operand(rm, operand, rm->rm_program_size);		
-	    }	    
-	    else if(sv_eq(token, SV(inst_as_cstr(INST_PLUSI)))) {
-		rm->program[rm->rm_program_size].inst_type = INST_PLUSI;
-	    }
-	    else if(sv_eq(token, SV(inst_as_cstr(INST_MINUSI)))) {
-		rm->program[rm->rm_program_size].inst_type = INST_MINUSI;
-	    }
-	    else if(sv_eq(token, SV(inst_as_cstr(INST_MULI)))) {
-		rm->program[rm->rm_program_size].inst_type = INST_MULI;
-	    }	    	       	    
-	    else if(sv_eq(token, SV(inst_as_cstr(INST_DIVI)))) {
-		rm->program[rm->rm_program_size].inst_type = INST_DIVI;
-	    }
+		else if(sv_eq(token, SV(inst_as_cstr(INST_MINUSI)))) {
+		    rm->program[rm->rm_program_size].inst_type = INST_MINUSI;
+		}
+		else if(sv_eq(token, SV(inst_as_cstr(INST_MULI)))) {
+		    rm->program[rm->rm_program_size].inst_type = INST_MULI;
+		}	    	       	    
+		else if(sv_eq(token, SV(inst_as_cstr(INST_DIVI)))) {
+		    rm->program[rm->rm_program_size].inst_type = INST_DIVI;
+		}
     	    else if(sv_eq(token, SV(inst_as_cstr(INST_GTE)))) {
 		rm->program[rm->rm_program_size].inst_type = INST_GTE;
 	    }	    	       	    
@@ -464,9 +472,14 @@ void rasm_translate_source(Rm *rm, String_View input_filepath) {
 	    }
 	    rm->rm_program_size += 1;
 	}
+	    
+	}
+	
+
 	// printf("------------\n");
     }
 
+    // * Bind the value of
     for(size_t i = 0; i < rm->deferred_operands_size; ++i) {
 	String_View binding = rm->deferred_operands[i].name;
 	Inst_Addr addr = rm->deferred_operands[i].addr;
@@ -569,7 +582,7 @@ Err rm_execute_inst(Rm *rm) {
 	if(rm->rm_stack_size >= RM_STACK_CAPACITY) {
 	    return ERR_STACK_OVERFLOW;
 	}
-	rm->stack[rm->rm_stack_size++] = (int64_t)inst.inst_operand;
+	rm->stack[rm->rm_stack_size++] = inst.inst_operand.as_i64;
 	rm->ip += 1;
     } break;
 
@@ -578,17 +591,17 @@ Err rm_execute_inst(Rm *rm) {
 	    return ERR_STACK_OVERFLOW;
 	}
 
-	uint64_t pos = inst.inst_operand;
+	uint64_t pos = inst.inst_operand.as_u64;
 	if(pos >= rm->rm_stack_size) {
 	    return ERR_STACK_UNDERFLOW;
 	}
-	const uint64_t idx = rm->rm_stack_size - 1 - inst.inst_operand;
+	const uint64_t idx = rm->rm_stack_size - 1 - inst.inst_operand.as_u64;
 	rm->stack[rm->rm_stack_size++] = rm->stack[idx];
 	rm->ip += 1;
     } break;
 
     case INST_JMP: {
-	rm->ip = inst.inst_operand;	    
+	rm->ip = inst.inst_operand.as_u64;	    
     } break;	
 
     case INST_JMPIF: {
@@ -599,7 +612,7 @@ Err rm_execute_inst(Rm *rm) {
 	// * If the top of the stack is true then jmp
 	if((int64_t)rm->stack[rm->rm_stack_size]) {
 	    // printf("JMP\n");
-	    rm->ip = inst.inst_operand;
+	    rm->ip = inst.inst_operand.as_u64;
 	} else {
 	    // printf("DON'T JMP\n");	    
 	    rm->ip += 1;
@@ -743,6 +756,51 @@ void rasm_save_to_file(Rm *rm, String_View filepath) {
     }
     
     fclose(file_fd);
+}
+
+String_View arena_slurp_file(Rm *rm, String_View filepath) {
+    const char *filepath_cstr = arena_sv_to_cstr(rm, filepath);
+
+    FILE *file_fd = fopen(filepath_cstr, "r");
+    if(file_fd == NULL) {
+	fprintf(stderr, "ERROR: Could Not read File %s\n", strerror(errno));
+	exit(1);
+    }
+
+    if(fseek(file_fd, 0, SEEK_END) < 0) {
+	fprintf(stderr, "ERROR: Could Not read File %s\n", strerror(errno));
+	exit(1);
+    }
+
+    long m = ftell(file_fd);
+    if(m < 0) {
+	fprintf(stderr, "ERROR: Could Not read File %s\n", strerror(errno));
+	exit(1);
+    }
+
+    // * Allocate buffer of m size
+    void *buffer = arena_alloc(rm, (size_t)m);
+    if(buffer == NULL) {
+	fprintf(stderr, "ERROR: Could Not allocate memory for the file %s\n", strerror(errno));
+	exit(1);
+    }
+
+    // * Set file pos at the start of file
+    if(fseek(file_fd, 0, SEEK_SET) < 0) {
+	fprintf(stderr, "ERROR: Could Not read File %s\n", strerror(errno));
+	exit(1);
+    }
+
+    // Copy from 0 - m into buffer
+    size_t n = fread(buffer, 1, (size_t)m, file_fd);
+    if(ferror(file_fd)) {
+	fprintf(stderr, "ERROR: Could Not read File %s\n", strerror(errno));
+	exit(1);
+    }
+    
+    fclose(file_fd);
+
+    return (String_View) { .count = n, .data = buffer }; 
 }
 
 #endif // RM_IMPLEMENTATION

@@ -52,6 +52,8 @@ int main(int argc, char *argv[]) {
 	rm_dump_stack(stdout, &rm);
     }
     else {
+	// rm_dump_stack(stdout, &rm);
+	
 	while(limit != 0 && !rm.halt) {
 	    // * execute the instruction
 	    Err err = rm_execute_inst(&rm);
