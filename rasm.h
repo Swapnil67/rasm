@@ -255,9 +255,9 @@ void *arena_alloc(Rm *rm, size_t n) {
 // static void show_bindings(Rm *rm) {
 //     printf("\n ------ Bindings ----- \n");
 //     for(size_t i = 0; i < rm->bindings_size; ++i) {
-// 	printf("Name: "SV_Fmt", addr: %"PRIu64"\n",
-// 	        SV_Arg(rm->bindings[i].name), rm->bindings[i].value);
-//     }    
+// 	printf("Name: "SV_Fmt", val: %"PRIu64"\n",
+// 	        SV_Arg(rm->bindings[i].name), rm->bindings[i].value.as_u64);
+//     }
 // }
 
 // static void show_deferred_operands(Rm *rm) {
@@ -310,12 +310,6 @@ bool rasm_bind_value(Rm *rm, String_View name, Word value) {
 }
 
 bool rasm_translate_literal(Rm *rm, String_View operand, Word *output) {
-
-
-    // * Check if label
-    if(resolve_bind_value(rm, operand, output)) {
-	return true;
-    }
 
     // * Check if number
     char *str = arena_sv_to_cstr(rm, operand);
@@ -413,8 +407,8 @@ void rasm_translate_source(Rm *rm, String_View input_filepath) {
 		    if(!rasm_translate_literal(rm,
 		                              operand,
 		                              &rm->program[rm->rm_program_size].inst_operand)) {
-			fprintf(stderr, "No digits were found\n");
-			exit(1);			
+			
+			rasm_push_deferred_operand(rm, operand, rm->rm_program_size);
 		    }
 		}   
 		else if(sv_eq(token, SV(inst_as_cstr(INST_DUP)))) {
@@ -485,6 +479,7 @@ void rasm_translate_source(Rm *rm, String_View input_filepath) {
 	// printf("------------\n");
     }
 
+    // * Bind the value of
     for(size_t i = 0; i < rm->deferred_operands_size; ++i) {
 	String_View binding = rm->deferred_operands[i].name;
 	Inst_Addr addr = rm->deferred_operands[i].addr;
